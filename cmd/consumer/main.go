@@ -9,6 +9,7 @@ import (
 	"github.com/m3k3r1/go-orders/pkg/rabbitmq"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"math/rand"
+	"net/http"
 	"sync"
 )
 
@@ -23,6 +24,20 @@ func main() {
 	repository := database.NewOrderRepository(db)
 	uc := usecase.NewCalculateFinalPriceUseCase(repository)
 
+	//http server
+	http.HandleFunc("/total", func(w http.ResponseWriter, r *http.Request) {
+		uc := usecase.NewGetTotalUseCase(repository)
+		output, err := uc.Execute()
+		if err != nil {
+			// Internal Server Error
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(output)
+	})
+	go http.ListenAndServe(":8181", nil)
+
+	// consumer
 	ch, err := rabbitmq.OpenChannel()
 	if err != nil {
 		panic(err)
@@ -38,6 +53,7 @@ func main() {
 		go Worker(out, uc, i)
 	}
 	wg.Wait()
+
 }
 
 func Worker(deliveryMessage <-chan amqp.Delivery, uc *usecase.CalculateFinalPriceUseCase, workerId int) {
